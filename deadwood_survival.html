@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Deadwood — Survival</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#eee;font-family:monospace}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+#hud{position:fixed;inset:0;pointer-events:none}
+#stats{position:absolute;left:10px;top:10px;background:#10130fcc;border:2px solid #4a4d42;padding:7px;min-width:190px;font-size:12px;box-shadow:3px 3px #0008}
+.bar{height:9px;background:#252822;margin:3px 0 5px;border:1px solid #000}.fill{height:100%}
+#inv{position:absolute;right:10px;top:10px;width:235px;background:#10130fdd;border:2px solid #666;padding:7px;display:none;pointer-events:auto}
+#inv h3{margin:0 0 6px;font-size:13px}.slot{display:inline-flex;width:49px;height:49px;margin:2px;background:#282b25;border:1px solid #666;align-items:center;justify-content:center;font-size:9px;text-align:center}
+#msg{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);background:#10130fdd;border:2px solid #666;padding:7px;font-size:12px}
+#title{position:fixed;inset:0;background:linear-gradient(#111b,#080a08);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:5}
+#title h1{font-size:42px;margin:0;text-shadow:4px 4px #000;letter-spacing:3px}.sub{color:#a6ad99;margin:8px 0 24px}
+button,#start{font:inherit;color:#eee;background:#30352d;border:2px solid #aaa;padding:16px 24px;box-shadow:3px 3px #000;cursor:pointer;text-align:center;min-width:230px}
+#controls{position:fixed;inset:0;pointer-events:none;z-index:3}.pad{position:absolute;left:20px;bottom:20px;width:145px;height:145px;pointer-events:auto}
+.d{position:absolute;width:48px;height:48px;background:#20251fcc;border:2px solid #777;color:#ddd;display:flex;align-items:center;justify-content:center;user-select:none}
+.up{left:48px;top:0}.down{left:48px;bottom:0}.left{left:0;top:48px}.right{right:0;top:48px}
+.actions{position:absolute;right:20px;bottom:22px;display:flex;gap:10px;pointer-events:auto}.act{width:65px;height:65px;border-radius:50%;padding:0;background:#20251fcc}
+@media(min-width:800px){#inv{display:block}}
+
+/* --- mobile survival interface --- */
+#hud{font-family:monospace}
+#stats{left:8px;top:8px;width:175px;min-width:0;background:#161914e8;border:2px solid #777;padding:6px}
+#stats:before{content:'SURVIVOR';display:block;font-weight:bold;color:#d5d0b4;margin-bottom:4px}
+.bar{height:8px;margin:2px 0 4px}
+#inv{right:8px;top:8px;width:205px;background:#151813f2;border:2px solid #777}
+#inv h3{background:#292d25;margin:-7px -7px 7px;padding:6px;color:#ddd}
+.slot{width:43px;height:43px;background:#20231e;border:1px solid #777}
+#msg{bottom:145px;font-size:11px;max-width:80%;text-align:center;padding:6px}
+#controls{display:block}
+.pad{left:15px;bottom:18px;width:150px;height:150px}
+.d{background:#171b16dd;border:2px solid #85887b;font-size:18px}
+.actions{right:14px;bottom:22px}
+.act{width:72px;height:72px;border:2px solid #85887b;font-size:11px}
+#title{background:radial-gradient(circle,#30372d,#0c0e0c 75%)}
+#title h1{font-size:38px;color:#d8d0ae}
+@media(max-width:700px){
+ #inv{display:none;top:auto;right:8px;bottom:175px;width:calc(100% - 16px)}
+ #stats{font-size:10px;width:150px}
+ #ammoText{margin-top:3px}
+ #title h1{font-size:34px}
+ #start{font-size:13px;padding:14px 18px}
+}
+</style>
+<style>
+html,body,button{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+#title{pointer-events:auto}
+</style></head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div id="stats">
+  HP <div class="bar"><div id="hp" class="fill"></div></div>
+  HUNGER <div class="bar"><div id="food" class="fill"></div></div>
+  THIRST <div class="bar"><div id="water" class="fill"></div></div>
+  <div id="ammoText">Ammo: 12 / 36</div>
+ </div>
+ <div id="inv"><h3>BACKPACK</h3><div id="slots"></div></div>
+ <div id="msg">WASD / arrows to move · E loot · F attack · I inventory</div>
+</div>
+<div id="controls">
+ <div class="pad"><div class="d up" data-k="w">▲</div><div class="d down" data-k="s">▼</div><div class="d left" data-k="a">◀</div><div class="d right" data-k="d">▶</div></div>
+ <div class="actions"><button class="act" id="attack">HIT</button><button class="act" id="loot">LOOT</button></div>
+</div>
+<div id="title"><h1>DEADWOOD</h1><div class="sub">A MINI SURVIVAL GAME</div><div style="color:#aaa;font-size:11px;margin-bottom:10px">TAP THE BUTTON TO START</div><div id="start">ENTER THE WASTELAND</div></div>
+
+<script>
+const c=document.getElementById('game'),x=c.getContext('2d'); x.imageSmoothingEnabled=false;
+let W,H,scale=2; function resize(){W=c.width=innerWidth;H=c.height=innerHeight}addEventListener('resize',resize);resize();
+const keys={}; addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;if(e.key.toLowerCase()==='i')document.getElementById('inv').style.display=document.getElementById('inv').style.display==='block'?'none':'block'});addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
+document.querySelectorAll('[data-k]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();keys[b.dataset.k]=1};b.onpointerup=e=>{e.preventDefault();keys[b.dataset.k]=0};b.onpointercancel=()=>keys[b.dataset.k]=0});
+let running=false, last=0, cam={x:0,y:0}, world={w:3600,h:2600}, p={x:1800,y:1300,r:13,hp:100,food:100,water:100,ammo:12}, inv=['9mm Ammo','Bandage','Canned Beans','Wood'];
+let zombies=[], loot=[], trees=[];
+function rand(a,b){return Math.random()*(b-a)+a}
+for(let i=0;i<260;i++)trees.push({x:rand(60,3540),y:rand(60,2540),s:rand(.7,1.3)});
+for(let i=0;i<34;i++)zombies.push({x:rand(250,3350),y:rand(200,2400),r:12,hp:45,dead:false});
+for(let i=0;i<55;i++)loot.push({x:rand(120,3480),y:rand(120,2480),type:['Food','Water','Ammo','Bandage'][i%4],taken:false});
+function rect(a,b,w,h,col){x.fillStyle=col;x.fillRect(a,b,w,h)}
+function worldDraw(){
+ rect(0,0,world.w,world.h,'#6e745d');
+ // pixel terrain
+ for(let gx=0;gx<world.w;gx+=64)for(let gy=0;gy<world.h;gy+=64){
+  if(((gx/64|0)+(gy/64|0))%3===0)rect(gx,gy,64,64,'#707760');
+ }
+ // roads
+ rect(0,1120,world.w,150,'#5b5b50');rect(1450,0,150,world.h,'#5b5b50');
+ // houses
+ [[350,430],[720,1700],[2200,500],[2700,1600],[3000,350],[1150,430]].forEach(q=>{
+  rect(q[0],q[1],190,150,'#4c4a42');rect(q[0]+12,q[1]+12,166,126,'#7c7765');
+  rect(q[0]+25,q[1]+28,42,36,'#3d514d');rect(q[0]+120,q[1]+28,42,36,'#3d514d');
+  rect(q[0]+72,q[1]+88,45,50,'#493c31');
+ });
+ trees.forEach(t=>{rect(t.x-4,t.y+10,8,17,'#493a2d');rect(t.x-14*t.s,t.y-15*t.s,28*t.s,30*t.s,'#344a32')});
+ loot.forEach(l=>{if(!l.taken){rect(l.x-6,l.y-6,12,12,'#c1a86a');rect(l.x-4,l.y-4,8,8,'#7b6843')}});
+}
+function draw(){
+ x.clearRect(0,0,W,H);cam.x=Math.max(0,Math.min(world.w-W,p.x-W/2));cam.y=Math.max(0,Math.min(world.h-H,p.y-H/2));
+ x.save();x.translate(-cam.x,-cam.y);worldDraw();
+ zombies.forEach(z=>{if(z.dead)return;rect(z.x-10,z.y-9,20,20,'#293329');rect(z.x-7,z.y-13,14,8,'#465a42');rect(z.x-7,z.y-3,4,4,'#d0c0a0');rect(z.x+3,z.y-3,4,4,'#d0c0a0')});
+ // player
+ rect(p.x-11,p.y-12,22,25,'#1c2730');rect(p.x-8,p.y-17,16,9,'#a28b68');rect(p.x-8,p.y-15,4,3,'#222');rect(p.x+4,p.y-15,4,3,'#222');
+ x.restore();
+ document.getElementById('hp').style.width=p.hp+'%';document.getElementById('food').style.width=p.food+'%';document.getElementById('water').style.width=p.water+'%';
+ document.getElementById('slots').innerHTML=inv.map(i=>'<span class="slot">'+i+'</span>').join('');
+}
+function attack(){let z=zombies.find(z=>!z.dead&&Math.hypot(z.x-p.x,z.y-p.y)<65);if(z){z.hp-=25;if(z.hp<=0)z.dead=true;p.ammo=Math.max(0,p.ammo-1);document.getElementById('ammoText').textContent='Ammo: '+p.ammo+' / 36';}}
+function doLoot(){let l=loot.find(l=>!l.taken&&Math.hypot(l.x-p.x,l.y-p.y)<55);if(l){l.taken=true;inv.push(l.type);if(l.type==='Food')p.food=Math.min(100,p.food+30);if(l.type==='Water')p.water=Math.min(100,p.water+30);if(l.type==='Bandage')p.hp=Math.min(100,p.hp+20);if(l.type==='Ammo')p.ammo+=6;}}
+document.getElementById('attack').onpointerdown=attack;document.getElementById('loot').onpointerdown=doLoot;addEventListener('keydown',e=>{if(e.key.toLowerCase()==='f')attack();if(e.key.toLowerCase()==='e')doLoot()});
+function loop(t){let dt=Math.min(.04,(t-last)/1000||0);last=t;if(running){
+ let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);let n=Math.hypot(dx,dy)||1;p.x=Math.max(20,Math.min(world.w-20,p.x+dx/n*145*dt));p.y=Math.max(20,Math.min(world.h-20,p.y+dy/n*145*dt));
+ p.food=Math.max(0,p.food-dt*.45);p.water=Math.max(0,p.water-dt*.7);if(p.food===0||p.water===0)p.hp=Math.max(0,p.hp-dt*2);
+ zombies.forEach(z=>{if(z.dead)return;let dx=p.x-z.x,dy=p.y-z.y,d=Math.hypot(dx,dy);if(d<430){z.x+=dx/d*35*dt;z.y+=dy/d*35*dt;if(d<25)p.hp=Math.max(0,p.hp-dt*7)}});
+ if(p.hp<=0){running=false;document.getElementById('msg').textContent='YOU DIED — refresh to try again';}
+ draw();}requestAnimationFrame(loop)}requestAnimationFrame(loop);
+function startGame(e){if(e)e.preventDefault();running=true;document.getElementById('title').style.display='none';document.getElementById('msg').textContent='Find supplies. Stay alive.';draw()}
+const startButton=document.getElementById('start');
+let started=false;
+function startGame(e){
+ if(e){e.preventDefault();e.stopPropagation();}
+ if(started)return;
+ started=true;
+ running=true;
+ document.getElementById('title').style.display='none';
+ document.getElementById('msg').textContent='Find supplies. Stay alive.';
+ draw();
+}
+startButton.addEventListener('touchstart',startGame,{passive:false});
+startButton.addEventListener('pointerdown',startGame,{passive:false});
+startButton.addEventListener('click',startGame);
+draw();
+</script>
+</body></html>
